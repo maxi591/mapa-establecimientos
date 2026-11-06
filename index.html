@@ -195,7 +195,7 @@ td.off,th.off{color:#c3c0b8}
       <li><b>Clasificador de actividades:</b> nomenclador CLAE (AFIP) publicado por CEP XXI. <a href="https://cdn.produccion.gob.ar/cdn-cep/clae_agg.csv" target="_blank" rel="noopener">clae_agg.csv</a></li>
       <li><b>Límites de partidos y departamentos:</b> Instituto Geográfico Nacional (IGN), capa “Departamento” del servicio WFS oficial, simplificada para la web. Los establecimientos se asignan a cada partido/departamento según el código oficial que trae la base del CEP XXI (no por cruce geográfico). Se armonizaron 3 códigos que difieren entre fuentes: Chascomús (06217→06218), Río Grande (94007→94008) y Ushuaia (94014→94015). <a href="https://www.ign.gob.ar/NuestrasActividades/InformacionGeoespacial/CapasSIG" target="_blank" rel="noopener">ign.gob.ar – Capas SIG</a> · <a href="https://cdn.produccion.gob.ar/cdn-cep/establecimientos-productivos/codigo_departamento_provincia.csv" target="_blank" rel="noopener">diccionario de departamentos (CEP XXI)</a></li>
       <li><b>Límites provinciales:</b> Natural Earth, Admin 1 – States, Provinces (1:10m, dominio público), simplificados para la web. Las Islas Malvinas se muestran como parte de Tierra del Fuego, Antártida e Islas del Atlántico Sur. <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-1-states-provinces/" target="_blank" rel="noopener">naturalearthdata.com</a></li>
-      <li><b>Escala de tamaño:</b> la fuente oficial publica el empleo de cada establecimiento en 5 rangos fijos: 1–9, 10–49, 50–199, 200–499 y 500 o más trabajadores. No es posible separar 51–100 de 101–200 ni usar cortes exactos en 10/50/500 sin inventar datos, por eso el mapa usa los rangos oficiales (equivalentes aproximados: 1–10, 11–50, 51–200, 201–500, 501+).</li>
+      <li><b>Escala de tamaño:</b> la fuente oficial publica el empleo de cada establecimiento en 5 rangos fijos: 1–9, 10–49, 50–199, 200–499 y 500 o más trabajadores. El mapa los agrupa en 4: 1–9, 10–49, 50–199 y 200 o más (suma de 200–499 y 500+). No es posible cortar exactamente en 10, 50 o 201 sin inventar datos, por eso se respetan los límites oficiales (equivalentes aproximados: 1–10, 11–50, 51–200, 201+).</li>
       <li><b>Unidad:</b> se cuentan <i>establecimientos</i> (sucursales, plantas, locales) de empleadores privados registrados, no empresas: una empresa con varias sucursales aparece varias veces, y cada sucursal con su propio rango de empleo. No incluye monotributistas ni autónomos sin empleados. Las coordenadas vienen redondeadas a 3 decimales (≈100 m) por la propia fuente para preservar el secreto estadístico.</li>
       <li><b>Sectores:</b> agrupación propia de las letras CLAE — Industria manufacturera (C); Petróleo, gas y minería (B); Agro, ganadería y pesca (A); Construcción (F); Energía, agua y residuos (D–E); Comercio (G); Servicios (H a U). La actividad petrolera aparece en “Petróleo, gas y minería” (extracción y servicios de apoyo) y en Industria (refinación, rama 19).</li>
     </ul>
@@ -211,9 +211,10 @@ const D = window.DATA;
 const fmt = d3.format(',');
 const nf = v => fmt(v).replace(/,/g,'.');
 const pct = v => (v*100).toLocaleString('es-AR',{maximumFractionDigits:1, minimumFractionDigits:1})+'%';
-const TAM = ['1 a 9','10 a 49','50 a 199','200 a 499','500 o más'];
-const TCOL = ['#5aa9f2','#2ec4a6','#f4c542','#f2793a','#e0367a'];
-const TSIZE = [1.1,1.9,2.8,3.8,5.0];
+const TAM = ['1 a 9','10 a 49','50 a 199','200 o más'];
+const TCOL = ['#5aa9f2','#2ec4a6','#f4c542','#e0367a'];
+const TSIZE = [1.1,1.9,2.9,4.4];
+const NT = TAM.length;
 const SECT = ['Industria manufacturera','Petróleo, gas y minería','Agro, ganadería y pesca','Construcción','Energía, agua y residuos','Comercio','Servicios'];
 
 // ---- decode columns
@@ -221,14 +222,14 @@ const dec = (s) => { const bin = atob(s); const u = new Uint8Array(bin.length); 
 const C = D.cols, N = D.n_rows;
 const LAT = new Uint16Array(dec(C.lat).buffer), LON = new Uint16Array(dec(C.lon).buffer);
 const DEP = new Uint16Array(dec(C.dep).buffer);
-const PRV = dec(C.prov), TM = dec(C.tam), CL = dec(C.clae), CNT = new Uint16Array(dec(C.n).buffer);
+const PRV = dec(C.prov), TM = dec(C.tam).map(t => t===4 ? 3 : t), CL = dec(C.clae), CNT = new Uint16Array(dec(C.n).buffer);
 const PROV = D.prov, ACT = D.act, DEPS = D.dep, ND = DEPS.length;
 const depLabel = p => PROV[p].id===6?'Partido':PROV[p].id===2?'Comuna':'Departamento';
 const actSector = new Uint8Array(ACT.map(a => SECT.indexOf(a.sector)));
 const NP = PROV.length;
 
 // ---- state
-const S = { tam:[true,true,true,true,true], sector:-1, rama:-1, prov:-1, dep:-1, depSort:'total', depDir:-1, mode:'points', sortKey:'total', sortDir:-1 };
+const S = { tam:[true,true,true,true], sector:-1, rama:-1, prov:-1, dep:-1, depSort:'total', depDir:-1, mode:'points', sortKey:'total', sortDir:-1 };
 const mask = new Uint8Array(N);
 
 // ---- header
@@ -240,8 +241,8 @@ const chips = d3.select('#chips').selectAll('button').data(TAM).join('button')
   .attr('class','chip').attr('aria-pressed','true')
   .html((d,i)=>`<span class="sw" style="background:${TCOL[i]}"></span><span class="nm">${d}</span><span class="ct" id="ct${i}">—</span>`)
   .on('click',(e,d)=>{ const i=TAM.indexOf(d); S.tam[i]=!S.tam[i]; update(); });
-document.getElementById('allT').onclick=()=>{S.tam=[true,true,true,true,true];update();};
-document.getElementById('noneT').onclick=()=>{S.tam=[false,false,false,false,false];update();};
+document.getElementById('allT').onclick=()=>{S.tam=[true,true,true,true];update();};
+document.getElementById('noneT').onclick=()=>{S.tam=[false,false,false,false];update();};
 
 const selSector = document.getElementById('selSector');
 selSector.append(new Option('Todos los sectores','-1'), ...SECT.map((s,i)=>new Option(s,String(i))));
@@ -258,7 +259,7 @@ const provOrder = PROV.map((p,i)=>({p,i})).sort((a,b)=>a.p.nombre.localeCompare(
 selProv.append(new Option('Todo el país','-1'), ...provOrder.map(o=>new Option(o.p.nombre,String(o.i))));
 selProv.onchange=()=>{ setProv(+selProv.value, true); };
 d3.selectAll('#mode button').on('click',function(){ S.mode=this.dataset.m; d3.selectAll('#mode button').attr('aria-pressed',function(){return String(this.dataset.m===S.mode)}); drawAll(); });
-document.getElementById('reset').onclick=()=>{ S.tam=[true,true,true,true,true]; S.sector=-1; S.rama=-1; S.dep=-1; selSector.value='-1'; fillRama(); setProv(-1,true); };
+document.getElementById('reset').onclick=()=>{ S.tam=[true,true,true,true]; S.sector=-1; S.rama=-1; S.dep=-1; selSector.value='-1'; fillRama(); setProv(-1,true); };
 fillRama();
 
 function setProv(i, zoomTo){
@@ -278,8 +279,8 @@ function setDep(d, zoomTo){
   if (zoomTo) zoomToFeat(d>=0? depFeatures[d] : (S.prov>=0? features[S.prov] : null));
 }
 function compute(){
-  aggDep = Array.from({length:ND},()=>new Float64Array(5));
-  agg = Array.from({length:NP},()=>new Float64Array(5));   // with all filters except prov
+  aggDep = Array.from({length:ND},()=>new Float64Array(NT));
+  agg = Array.from({length:NP},()=>new Float64Array(NT));   // with all filters except prov
   ramaAgg = new Float64Array(ACT.length);                    // tam+sector+prov filter, ignoring rama
   const t=S.tam, sec=S.sector, ra=S.rama, pv=S.prov;
   for (let j=0;j<N;j++){
@@ -291,10 +292,10 @@ function compute(){
     if (secOk && tOk && (S.dep>=0 ? DEP[j]===S.dep : (pv<0 || PRV[j]===pv))) ramaAgg[c] += CNT[j];
     mask[j] = (secOk && ramOk && tOk) ? 1 : 0;
   }
-  total = 0; for (let p=0;p<NP;p++) for(let k=0;k<5;k++) if(t[k]) total+=agg[p][k];
+  total = 0; for (let p=0;p<NP;p++) for(let k=0;k<NT;k++) if(t[k]) total+=agg[p][k];
 }
-const depTot = d => { let s=0; for(let k=0;k<5;k++) if(S.tam[k]) s+=aggDep[d][k]; return s; };
-const provTot = p => { let s=0; for(let k=0;k<5;k++) if(S.tam[k]) s+=agg[p][k]; return s; };
+const depTot = d => { let s=0; for(let k=0;k<NT;k++) if(S.tam[k]) s+=aggDep[d][k]; return s; };
+const provTot = p => { let s=0; for(let k=0;k<NT;k++) if(S.tam[k]) s+=agg[p][k]; return s; };
 
 // ---- map setup
 const box = document.getElementById('mapbox'), cv = document.getElementById('cv'), ctx = cv.getContext('2d');
@@ -354,7 +355,7 @@ function render(){
   const nSel = total;
   // fewer points -> more opaque
   const baseA = nSel>200000?0.35: nSel>50000?0.5: nSel>5000?0.7:0.9;
-  for (let t=0;t<5;t++){
+  for (let t=0;t<NT;t++){
     if(!S.tam[t]) continue;
     ctx.fillStyle = TCOL[t];
     const s = TSIZE[t]*grow, h=s/2;
@@ -429,7 +430,7 @@ document.getElementById('zfit').onclick=()=>svg.transition().duration(500).call(
 // ---- table
 const cols = [{k:'name',l:'Provincia'},{k:'total',l:'Total'},...TAM.map((t,i)=>({k:'t'+i,l:t.replace(' a ','–').replace(' o más','+'),i})),{k:'share',l:'% país'}];
 function drawTable(){
-  const rows = d3.range(NP).map(p=>{ const r={p,name:PROV[p].nombre,total:provTot(p)}; for(let k=0;k<5;k++) r['t'+k]=agg[p][k]; r.share= total? r.total/total:0; return r; });
+  const rows = d3.range(NP).map(p=>{ const r={p,name:PROV[p].nombre,total:provTot(p)}; for(let k=0;k<NT;k++) r['t'+k]=agg[p][k]; r.share= total? r.total/total:0; return r; });
   const key=S.sortKey, dir=S.sortDir;
   rows.sort((a,b)=> key==='name'? dir*a.name.localeCompare(b.name,'es') : dir*(a[key]-b[key]));
   const max = d3.max(rows,r=>r.total)||1;
@@ -442,9 +443,9 @@ function drawTable(){
     .attr('class',r=>r.p===S.prov?'sel':null)
     .on('click',(e,r)=>setProv(S.prov===r.p?-1:r.p, true))
     .html(r=> `<td>${r.name}<div class="bar" style="width:${(r.total/max*100).toFixed(1)}%"></div></td><td><b>${nf(r.total)}</b></td>`+
-      d3.range(5).map(k=>`<td class="${S.tam[k]?'':'off'}">${S.tam[k]?nf(r['t'+k]):'·'}</td>`).join('')+`<td>${pct(r.share)}</td>`)
+      d3.range(NT).map(k=>`<td class="${S.tam[k]?'':'off'}">${S.tam[k]?nf(r['t'+k]):'·'}</td>`).join('')+`<td>${pct(r.share)}</td>`)
     .order();
-  const tk = d3.range(5).map(k=>d3.sum(rows,r=>r['t'+k]));
+  const tk = d3.range(NT).map(k=>d3.sum(rows,r=>r['t'+k]));
   d3.select('#tbl tfoot').selectAll('tr').data([0]).join('tr').html(`<td>Total país</td><td>${nf(total)}</td>`+tk.map((v,k)=>`<td class="${S.tam[k]?'':'off'}">${S.tam[k]?nf(v):'·'}</td>`).join('')+`<td>${total?'100,0%':'—'}</td>`);
 }
 function drawDepTable(){
@@ -454,7 +455,7 @@ function drawDepTable(){
   const lab = depLabel(S.prov);
   document.getElementById('depTitle').textContent = `${lab==='Partido'?'Partidos':lab==='Comuna'?'Comunas':'Departamentos'} de ${PROV[S.prov].nombre}`;
   const pv = provTot(S.prov);
-  const rows = d3.range(ND).filter(d=>DEPS[d].prov===S.prov).map(d=>{ const r={d,name:DEPS[d].nombre,total:depTot(d)}; for(let k=0;k<5;k++) r['t'+k]=aggDep[d][k]; r.share= pv? r.total/pv:0; return r; });
+  const rows = d3.range(ND).filter(d=>DEPS[d].prov===S.prov).map(d=>{ const r={d,name:DEPS[d].nombre,total:depTot(d)}; for(let k=0;k<NT;k++) r['t'+k]=aggDep[d][k]; r.share= pv? r.total/pv:0; return r; });
   const key=S.depSort, dir=S.depDir;
   rows.sort((a,b)=> key==='name'? dir*a.name.localeCompare(b.name,'es') : dir*(a[key]-b[key]));
   const max = d3.max(rows,r=>r.total)||1;
@@ -468,9 +469,9 @@ function drawDepTable(){
     .attr('class',r=>r.d===S.dep?'sel':null)
     .on('click',(e,r)=>setDep(S.dep===r.d?-1:r.d, true))
     .html(r=> `<td>${r.name}<div class="bar" style="width:${(r.total/max*100).toFixed(1)}%"></div></td><td><b>${nf(r.total)}</b></td>`+
-      d3.range(5).map(k=>`<td class="${S.tam[k]?'':'off'}">${S.tam[k]?nf(r['t'+k]):'·'}</td>`).join('')+`<td>${pct(r.share)}</td>`)
+      d3.range(NT).map(k=>`<td class="${S.tam[k]?'':'off'}">${S.tam[k]?nf(r['t'+k]):'·'}</td>`).join('')+`<td>${pct(r.share)}</td>`)
     .order();
-  const tk = d3.range(5).map(k=>d3.sum(rows,r=>r['t'+k]));
+  const tk = d3.range(NT).map(k=>d3.sum(rows,r=>r['t'+k]));
   d3.select('#tblDep tfoot').selectAll('tr').data([0]).join('tr').html(`<td>Total provincia</td><td>${nf(pv)}</td>`+tk.map((v,k)=>`<td class="${S.tam[k]?'':'off'}">${S.tam[k]?nf(v):'·'}</td>`).join('')+`<td>${pv?'100,0%':'—'}</td>`);
 }
 document.getElementById('copyDep').onclick=async()=>{
@@ -514,7 +515,7 @@ function drawKpis(){
   else if (S.prov>=0){ pb.style.display=''; const v=provTot(S.prov); document.getElementById('kProv').textContent=nf(v); document.getElementById('kProvL').textContent=`en ${PROV[S.prov].nombre} · ${total?pct(v/total):'—'} del total filtrado`; }
   else pb.style.display='none';
   // chip counts (all filters except tamaño)
-  for (let k=0;k<5;k++){ let s=0; if (S.dep>=0) s=aggDep[S.dep][k]; else for(let p=0;p<NP;p++) if(S.prov<0||p===S.prov) s+=agg[p][k]; document.getElementById('ct'+k).textContent=nf(s); }
+  for (let k=0;k<NT;k++){ let s=0; if (S.dep>=0) s=aggDep[S.dep][k]; else for(let p=0;p<NP;p++) if(S.prov<0||p===S.prov) s+=agg[p][k]; document.getElementById('ct'+k).textContent=nf(s); }
   chips.attr('aria-pressed',(d,i)=>String(S.tam[i]));
   document.getElementById('mapTitle').textContent = S.dep>=0? DEPS[S.dep].nombre : S.prov>=0? PROV[S.prov].nombre : 'Distribución territorial';
   document.getElementById('mapNote').textContent = (S.mode==='points' ? 'Cada punto es una ubicación con al menos un establecimiento.' : `Color según establecimientos filtrados por ${zoomed?'partido / departamento':'provincia'} (escala log.).`) + (zoomed ? ' Pasá el mouse o hacé clic en un partido/departamento.' : ' Acercá el mapa para ver partidos y departamentos.');

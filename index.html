@@ -54,7 +54,8 @@ select:focus{outline:2px solid var(--ink);outline-offset:1px}
 .chip{display:flex;align-items:center;gap:9px;border:1.5px solid var(--ink);border-radius:0;padding:8px 11px;background:var(--surface-input);cursor:pointer;font:inherit;font-weight:500;text-align:left;color:var(--ink)}
 .chip .sw{width:11px;height:11px;flex:none;border-radius:50%}
 .chip .sw,th .sw,.tip .sw{outline:1px solid rgba(38,37,36,.35)}
-.chip .nm{flex:1}
+.chip .nm{flex:1;display:flex;flex-direction:column;line-height:1.2}
+.chip .nm small{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:var(--ink-quiet);text-transform:uppercase;margin-top:2px}
 .chip .ct{color:var(--ink-muted);font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
 .chip[aria-pressed=false]{opacity:.45;background:transparent;border-color:var(--line-strong)}
 .chip[aria-pressed=false] .sw{background:var(--line-strong) !important}
@@ -241,7 +242,7 @@ tbody tr:first-child .bar,tbody tr.sel .bar{background:var(--red)}
     <div>
       <div class="sub">Cómo leer los datos</div>
       <ul>
-        <li><span class="lt"></span><span><b>Tamaño:</b> la fuente publica el empleo de cada establecimiento en 5 rangos: 1–9, 10–49, 50–199, 200–499 y 500 o más. El mapa los agrupa en 4 y une los dos últimos en “200 o más”. No se puede cortar exacto en 10, 50 o 201 sin inventar datos (equivalentes aproximados: 1–10, 11–50, 51–200, 201+).</span></li>
+        <li><span class="lt"></span><span><b>Tamaño:</b> la fuente oficial publica el empleo de cada establecimiento en 5 rangos fijos: 1–9, 10–49, 50–199, 200–499 y 500 o más. Para acercarlos a la escala pedida (1–10, 11–50, 51–100, 101–200, más de 200) se agruparon así: “1 a 10” = 1–9; “11 a 50” = 10–49; “51 a 200” = 50–199; “Más de 200” = 200 o más. Los límites reales quedan corridos en una unidad (un local de exactamente 10, 50 o 200 empleados cae en el grupo siguiente). No existe dato público geolocalizado que permita separar 51–100 de 101–200, por eso ese tramo se muestra unido.</span></li>
         <li><span class="lt"></span><span><b>Unidad:</b> se cuentan establecimientos (sucursales, plantas, locales) de empleadores privados registrados, no empresas. Una empresa con varias sucursales aparece varias veces, cada una con su propio rango. No incluye monotributistas ni autónomos sin empleados.</span></li>
         <li><span class="lt"></span><span><b>Ubicación:</b> la fuente redondea las coordenadas a 3 decimales (unos 100 m) para preservar el secreto estadístico.</span></li>
         <li><span class="lt"></span><span><b>Sectores:</b> agrupación propia de las letras CLAE: Industria manufacturera (C); Petróleo, gas y minería (B); Agro, ganadería y pesca (A); Construcción (F); Energía, agua y residuos (D–E); Comercio (G); Servicios (H a U). Lo petrolero aparece en Petróleo, gas y minería (extracción y servicios de apoyo) y en Industria (refinación, rama 19).</span></li>
@@ -263,7 +264,9 @@ const D = window.DATA;
 const fmt = d3.format(',');
 const nf = v => fmt(v).replace(/,/g,'.');
 const pct = v => (v*100).toLocaleString('es-AR',{maximumFractionDigits:1, minimumFractionDigits:1})+'%';
-const TAM = ['1 a 9','10 a 49','50 a 199','200 o más'];
+const TAM = ['1 a 10','11 a 50','51 a 200','Más de 200'];
+const TOF = ['dato oficial: 1–9','dato oficial: 10–49','dato oficial: 50–199','dato oficial: 200 o más'];
+const TSH = ['1–10','11–50','51–200','+200'];
 const TCOL = ['#8f8785','#c9bebc','#efe7e6','#ef412d'];
 const RAMP = d3.interpolateRgbBasis(['#3a3836','#645c5a','#ba212b','#ef412d','#ff6b57']);
 const TSIZE = [1.1,1.9,2.9,4.4];
@@ -292,7 +295,7 @@ document.getElementById('hdrEmp').textContent = nf(D.total_empleadores);
 // ---- controls
 const chips = d3.select('#chips').selectAll('button').data(TAM).join('button')
   .attr('class','chip').attr('aria-pressed','true')
-  .html((d,i)=>`<span class="sw" style="background:${TCOL[i]}"></span><span class="nm">${d}</span><span class="ct" id="ct${i}">—</span>`)
+  .html((d,i)=>`<span class="sw" style="background:${TCOL[i]}"></span><span class="nm">${d}<small>${TOF[i]}</small></span><span class="ct" id="ct${i}">—</span>`)
   .on('click',(e,d)=>{ const i=TAM.indexOf(d); S.tam[i]=!S.tam[i]; update(); });
 document.getElementById('allT').onclick=()=>{S.tam=[true,true,true,true];update();};
 document.getElementById('noneT').onclick=()=>{S.tam=[false,false,false,false];update();};
@@ -481,7 +484,7 @@ document.getElementById('zout').onclick=()=>svg.transition().duration(300).call(
 document.getElementById('zfit').onclick=()=>svg.transition().duration(500).call(zoom.transform,d3.zoomIdentity);
 
 // ---- table
-const cols = [{k:'name',l:'Provincia'},{k:'total',l:'Total'},...TAM.map((t,i)=>({k:'t'+i,l:t.replace(' a ','–').replace(' o más','+'),i})),{k:'share',l:'% país'}];
+const cols = [{k:'name',l:'Provincia'},{k:'total',l:'Total'},...TSH.map((t,i)=>({k:'t'+i,l:t,i})),{k:'share',l:'% país'}];
 function drawTable(){
   const rows = d3.range(NP).map(p=>{ const r={p,name:PROV[p].nombre,total:provTot(p)}; for(let k=0;k<NT;k++) r['t'+k]=agg[p][k]; r.share= total? r.total/total:0; return r; });
   const key=S.sortKey, dir=S.sortDir;
